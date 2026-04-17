@@ -14,10 +14,11 @@ import kotlin.math.sqrt
 /**
  * EmbeddingService handles text normalization, tokenization, and inference
  * using the e5-small-v2 ONNX model for on-device vector generation.
+ *
+ * @param modelFile The ONNX model file, typically resolved from app-specific storage.
  */
-class EmbeddingService {
+class EmbeddingService(private val modelFile: File) : AutoCloseable {
     private val TAG = "EmbeddingService"
-    private val MODEL_PATH = "/sdcard/Hayat/e5-small.onnx"
 
     private var ortEnv: OrtEnvironment = OrtEnvironment.getEnvironment()
     private var ortSession: OrtSession? = null
@@ -28,15 +29,14 @@ class EmbeddingService {
 
     private fun loadModel() {
         try {
-            val modelFile = File(MODEL_PATH)
             if (modelFile.exists()) {
                 val options = OrtSession.SessionOptions()
                 // Optimize for mobile execution
                 options.setIntraOpNumThreads(2)
-                ortSession = ortEnv.createSession(MODEL_PATH, options)
-                Log.d(TAG, "ONNX Model loaded successfully from $MODEL_PATH")
+                ortSession = ortEnv.createSession(modelFile.absolutePath, options)
+                Log.d(TAG, "ONNX Model loaded successfully from ${modelFile.absolutePath}")
             } else {
-                Log.e(TAG, "Model file not found at $MODEL_PATH")
+                Log.e(TAG, "Model file not found at ${modelFile.absolutePath}")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error loading ONNX model: ${e.message}")
@@ -85,25 +85,38 @@ class EmbeddingService {
 
                 // Prepare input tensors
                 val inputTensor = OnnxTensor.createTensor(ortEnv, java.nio.LongBuffer.wrap(tokens), shape)
-                val inputs = mapOf("input_ids" to inputTensor)
+                val attentionMask = LongArray(tokens.size) { 1L }
+                val attentionMaskTensor = OnnxTensor.createTensor(ortEnv, java.nio.LongBuffer.wrap(attentionMask), shape)
+
+                val inputs = mapOf(
+                    "input_ids" to inputTensor,
+                    "attention_mask" to attentionMaskTensor
+                )
 
                 // Run inference
-                session.run(inputs).use { results ->
-                    val outputTensor = results.get(0).value
+                try {
+                    session.run(inputs).use { results ->
+                        if (results.size() == 0) return@use null
 
-                    // Handle potential nested output arrays depending on model export format
-                    val rawOutput = when (outputTensor) {
-                        is Array<*> -> {
-                            if (outputTensor.isNotEmpty() && outputTensor[0] is FloatArray) {
-                                outputTensor[0] as FloatArray
-                            } else if (outputTensor.isNotEmpty() && outputTensor[0] is Array<*>) {
-                                (outputTensor[0] as Array<*>)[0] as? FloatArray
-                            } else null
+                        val outputTensor = results.get(0).value
+
+                        // Handle potential nested output arrays depending on model export format
+                        val rawOutput = when (outputTensor) {
+                            is Array<*> -> {
+                                if (outputTensor.isNotEmpty() && outputTensor[0] is FloatArray) {
+                                    outputTensor[0] as FloatArray
+                                } else if (outputTensor.isNotEmpty() && outputTensor[0] is Array<*>) {
+                                    (outputTensor[0] as Array<*>)[0] as? FloatArray
+                                } else null
+                            }
+                            else -> null
                         }
-                        else -> null
-                    }
 
-                    rawOutput?.let { normalizeL2(it) }
+                        rawOutput?.let { normalizeL2(it) }
+                    }
+                } finally {
+                    inputTensor.close()
+                    attentionMaskTensor.close()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Inference error: ${e.message}")
@@ -129,6 +142,15 @@ class EmbeddingService {
             FloatArray(vector.size) { i -> vector[i] / magnitude }
         } else {
             vector
+        }
+    }
+
+    override fun close() {
+        try {
+            ortSession?.close()
+            ortEnv.close()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error closing ONNX resources: ${e.message}")
         }
     }
 }
