@@ -41,9 +41,10 @@ fun HayatApp() {
     // Check for assets on startup
     LaunchedEffect(Unit) {
         val modelFile = File(hayatFolder, "model.gguf")
+        val embeddingModelFile = File(hayatFolder, "e5-small.onnx")
         val dbFile = File(hayatFolder, "medical.db")
 
-        if (!hayatFolder.exists() || !modelFile.exists() || !dbFile.exists()) {
+        if (!hayatFolder.exists() || !modelFile.exists() || !embeddingModelFile.exists() || !dbFile.exists()) {
             assetsMissing = true
         }
     }
