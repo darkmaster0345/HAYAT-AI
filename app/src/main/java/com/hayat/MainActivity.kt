@@ -1,7 +1,6 @@
 package com.hayat
 
 import android.os.Bundle
-import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -13,13 +12,21 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hayat.data.ChatMessage
 import com.hayat.data.ChatRole
 import com.hayat.ui.screens.ChatScreen
 import com.hayat.ui.screens.ErrorScreen
 import com.hayat.ui.screens.SettingsScreen
 import com.hayat.ui.theme.HayatTheme
+import com.hayat.viewmodel.MainViewModel
+import com.hayat.viewmodel.Screen
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -34,23 +41,33 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun HayatApp() {
-    var currentScreen by remember { mutableStateOf<Screen>(Screen.Chat) }
-    var assetsMissing by remember { mutableStateOf(false) }
-    val hayatFolder = File(Environment.getExternalStorageDirectory(), "Hayat")
+    val viewModel: MainViewModel = viewModel()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Check for assets on startup
+    val currentScreen by viewModel.currentScreen.collectAsState()
+    val assetsMissing by viewModel.assetsMissing.collectAsState()
+    val modelPath by viewModel.modelPath.collectAsState()
+    val dbPath by viewModel.dbPath.collectAsState()
+    val messages = viewModel.messages
+
+    // Initialize paths on first launch
     LaunchedEffect(Unit) {
-        val modelFile = File(hayatFolder, "model.gguf")
-        val dbFile = File(hayatFolder, "medical.db")
-
-        if (!hayatFolder.exists() || !modelFile.exists() || !dbFile.exists()) {
-            assetsMissing = true
-        }
+        viewModel.initializePaths(context)
     }
 
-    val messages = remember { mutableStateListOf<ChatMessage>() }
-    var modelPath by remember { mutableStateOf(File(hayatFolder, "model.gguf").absolutePath) }
-    var dbPath by remember { mutableStateOf(File(hayatFolder, "medical.db").absolutePath) }
+    // Re-check assets when app resumes
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.checkAssets()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     HayatTheme {
         Surface(
@@ -58,25 +75,24 @@ fun HayatApp() {
             color = MaterialTheme.colorScheme.background
         ) {
             if (assetsMissing) {
-                ErrorScreen(missingPath = hayatFolder.absolutePath)
+                ErrorScreen()
             } else {
                 Box {
                     when (currentScreen) {
                         Screen.Chat -> ChatScreen(
                             messages = messages,
                             onSendMessage = { text ->
-                                messages.add(ChatMessage(text, ChatRole.USER))
+                                viewModel.addMessage(ChatMessage(text, ChatRole.USER))
                                 // Placeholder for AI response
-                                messages.add(ChatMessage("Checking medical guidelines for: $text", ChatRole.ASSISTANT))
+                                viewModel.addMessage(ChatMessage("Checking medical guidelines for: $text", ChatRole.ASSISTANT))
                             }
                         )
                         Screen.Settings -> SettingsScreen(
                             modelPath = modelPath,
                             dbPath = dbPath,
                             onPathsChanged = { newModel, newDb ->
-                                modelPath = newModel
-                                dbPath = newDb
-                                currentScreen = Screen.Chat
+                                viewModel.updatePaths(newModel, newDb)
+                                viewModel.setCurrentScreen(Screen.Chat)
                             }
                         )
                     }
@@ -84,7 +100,8 @@ fun HayatApp() {
                     // Simple floating button to switch screens for demonstration
                     FloatingActionButton(
                         onClick = {
-                            currentScreen = if (currentScreen == Screen.Chat) Screen.Settings else Screen.Chat
+                            val newScreen = if (currentScreen == Screen.Chat) Screen.Settings else Screen.Chat
+                            viewModel.setCurrentScreen(newScreen)
                         },
                         modifier = Modifier
                             .align(Alignment.TopEnd)
@@ -93,7 +110,7 @@ fun HayatApp() {
                     ) {
                         Icon(
                             imageVector = Icons.Default.Settings,
-                            contentDescription = "Toggle Settings",
+                            contentDescription = stringResource(R.string.toggle_settings),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -101,9 +118,4 @@ fun HayatApp() {
             }
         }
     }
-}
-
-sealed class Screen {
-    object Chat : Screen()
-    object Settings : Screen()
 }

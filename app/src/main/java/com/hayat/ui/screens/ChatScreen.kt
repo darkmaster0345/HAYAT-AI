@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
@@ -12,9 +13,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hayat.R
 import com.hayat.data.ChatMessage
 import com.hayat.data.ChatRole
 
@@ -24,6 +27,14 @@ fun ChatScreen(
     onSendMessage: (String) -> Unit
 ) {
     var textState by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+
+    // Auto-scroll to the last message when messages change
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -32,6 +43,7 @@ fun ChatScreen(
     ) {
         // Conversation area
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
@@ -57,7 +69,7 @@ fun ChatScreen(
                     value = textState,
                     onValueChange = { textState = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("اكتب رسالة...") }, // Arabic for "Type a message..."
+                    placeholder = { Text(stringResource(R.string.chat_input_placeholder)) },
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surface,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surface,
@@ -75,7 +87,7 @@ fun ChatScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Send,
-                        contentDescription = "Send",
+                        contentDescription = stringResource(R.string.send_button),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -83,7 +95,7 @@ fun ChatScreen(
 
             // Disclaimer
             Text(
-                text = "I am an offline medical assistant, ask me about injuries.",
+                text = stringResource(R.string.chat_disclaimer),
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.Gray,
                 textAlign = TextAlign.Center,
