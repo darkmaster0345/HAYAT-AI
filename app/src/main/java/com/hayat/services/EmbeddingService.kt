@@ -84,17 +84,19 @@ class EmbeddingService(private val modelFile: File) : AutoCloseable {
                 val shape = longArrayOf(1, tokens.size.toLong())
 
                 // Prepare input tensors
-                val inputTensor = OnnxTensor.createTensor(ortEnv, java.nio.LongBuffer.wrap(tokens), shape)
-                val attentionMask = LongArray(tokens.size) { 1L }
-                val attentionMaskTensor = OnnxTensor.createTensor(ortEnv, java.nio.LongBuffer.wrap(attentionMask), shape)
-
-                val inputs = mapOf(
-                    "input_ids" to inputTensor,
-                    "attention_mask" to attentionMaskTensor
-                )
-
-                // Run inference
+                var inputTensor: OnnxTensor? = null
+                var attentionMaskTensor: OnnxTensor? = null
                 try {
+                    inputTensor = OnnxTensor.createTensor(ortEnv, java.nio.LongBuffer.wrap(tokens), shape)
+                    val attentionMask = LongArray(tokens.size) { 1L }
+                    attentionMaskTensor = OnnxTensor.createTensor(ortEnv, java.nio.LongBuffer.wrap(attentionMask), shape)
+
+                    val inputs = mapOf(
+                        "input_ids" to inputTensor,
+                        "attention_mask" to attentionMaskTensor
+                    )
+
+                    // Run inference
                     session.run(inputs).use { results ->
                         if (results.size() == 0) return@use null
 
@@ -115,8 +117,8 @@ class EmbeddingService(private val modelFile: File) : AutoCloseable {
                         rawOutput?.let { normalizeL2(it) }
                     }
                 } finally {
-                    inputTensor.close()
-                    attentionMaskTensor.close()
+                    inputTensor?.close()
+                    attentionMaskTensor?.close()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Inference error: ${e.message}")
@@ -148,7 +150,6 @@ class EmbeddingService(private val modelFile: File) : AutoCloseable {
     override fun close() {
         try {
             ortSession?.close()
-            ortEnv.close()
         } catch (e: Exception) {
             Log.e(TAG, "Error closing ONNX resources: ${e.message}")
         }
