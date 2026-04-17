@@ -10,12 +10,20 @@ class VectorSearchEngine(private val dao: MedicalChunkDao) {
      */
     suspend fun findRelevantChunks(queryEmbedding: FloatArray): List<MedicalChunk> {
         val allChunks = dao.getAllChunks()
-        return allChunks.filter { chunk ->
-            val score = calculateCosineSimilarity(queryEmbedding, chunk.embedding)
-            isResultValid(score)
-        }.sortedByDescending { chunk ->
-            calculateCosineSimilarity(queryEmbedding, chunk.embedding)
-        }
+        return allChunks
+            .map { chunk ->
+                val score = calculateCosineSimilarity(queryEmbedding, chunk.embedding)
+                chunk to score
+            }
+            .filter { (_, score) ->
+                isResultValid(score)
+            }
+            .sortedByDescending { (_, score) ->
+                score
+            }
+            .map { (chunk, _) ->
+                chunk
+            }
     }
 
     /**
